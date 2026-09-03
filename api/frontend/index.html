@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Data Agent — Test Console</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e6e8ec;
+    --muted: #8a8f9c;
+    --accent: #5b8cff;
+    --ok: #3ecf8e;
+    --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+  }
+  aside {
+    width: 320px;
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    overflow-y: auto;
+  }
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 24px 0 8px; }
+  .session-id { font-size: 12px; color: var(--muted); margin-bottom: 16px; word-break: break-all; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type="file"] { font-size: 12px; margin-bottom: 10px; width: 100%; color: var(--muted); }
+  input[type="text"] {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    color: var(--muted);
+    background: #0d0f13;
+    border-radius: 8px;
+    padding: 10px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 6px 4px 16px;
+  }
+  .msg { max-width: 75%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.4; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: white; }
+  .msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); }
+  .msg.err { align-self: flex-start; background: #2a1418; border: 1px solid var(--err); color: var(--err); }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255,255,255,.08);
+    margin-bottom: 6px;
+  }
+  .status { font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+  .table-list { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+  .table-list li { padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .table-list li:last-child { border-bottom: none; }
+  .table-list span.count { color: var(--muted); margin-right: 8px; }
+  .icon-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 6px; padding: 3px 7px; font-size: 11px; cursor: pointer;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--text); }
+</style>
+</head>
+<body>
+
+<aside>
+  <h1>Data Agent</h1>
+  <div class="session-id" id="sessionLabel">no session yet</div>
+  <button id="newSessionBtn">New session</button>
+
+  <h2>Upload CSVs</h2>
+  <div class="panel">
+    <input type="file" id="fileInput" multiple accept=".csv" />
+    <button id="uploadBtn" style="width:100%">Upload &amp; load into DB</button>
+    <div class="status" id="uploadStatus"></div>
+  </div>
+
+  <h2>Extract from API</h2>
+  <div class="panel">
+    <input type="text" id="apiUrlInput" placeholder="https://pokeapi.co/api/v2/pokemon"
+           style="width:100%; margin-bottom:8px; padding:8px 10px; font-size:12px; background:var(--bg,#0d0f13); border:1px solid var(--border); border-radius:6px; color:var(--text);" />
+    <select id="apiFormatInput" style="width:100%; margin-bottom:10px; padding:8px 10px; font-size:12px; background:var(--bg,#0d0f13); border:1px solid var(--border); border-radius:6px; color:var(--text);">
+      <option value="csv">csv</option>
+      <option value="json">json</option>
+      <option value="parquet">parquet</option>
+    </select>
+    <button id="extractBtn" style="width:100%">Extract &amp; load into DB</button>
+    <div class="status" id="extractStatus"></div>
+  </div>
+
+  <h2>Tables loaded</h2>
+  <div class="panel">
+    <ul class="table-list" id="tableList"><li style="color:var(--muted)">none yet</li></ul>
+    <button class="secondary" id="refreshTablesBtn" style="width:100%; margin-top:10px;">Refresh</button>
+  </div>
+
+  <h2>Schema details</h2>
+  <pre id="schemaDetails">—</pre>
+
+  <h2>Danger zone</h2>
+  <button class="secondary" id="deleteSessionBtn" style="width:100%; color:var(--err); border-color: var(--err)">Delete session</button>
+</aside>
+
+<main>
+  <div id="chat"></div>
+  <div class="row">
+    <input type="text" id="questionInput" placeholder="Ask a question about your loaded data (SQL only — use the sidebar to upload/extract)…" />
+    <button id="askBtn">Ask</button>
+  </div>
+</main>
+
+<script>
+const API = ""; // same origin
+let sessionId = null;
+
+const sessionLabel = document.getElementById("sessionLabel");
+const uploadStatus = document.getElementById("uploadStatus");
+const tableList = document.getElementById("tableList");
+const schemaDetails = document.getElementById("schemaDetails");
+const chat = document.getElementById("chat");
+
+async function newSession() {
+  const res = await fetch(`${API}/api/session`, { method: "POST" });
+  const data = await res.json();
+  sessionId = data.session_id;
+  sessionLabel.textContent = `session: ${sessionId}`;
+  tableList.innerHTML = `<li style="color:var(--muted)">none yet</li>`;
+  schemaDetails.textContent = "—";
+  chat.innerHTML = "";
+  uploadStatus.textContent = "";
+}
+
+function addMsg(text, cls) {
+  const div = document.createElement("div");
+  div.className = `msg ${cls}`;
+  div.textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+document.getElementById("newSessionBtn").onclick = newSession;
+
+document.getElementById("uploadBtn").onclick = async () => {
+  if (!sessionId) await newSession();
+  const files = document.getElementById("fileInput").files;
+  if (!files.length) {
+    uploadStatus.textContent = "Pick at least one CSV first.";
+    uploadStatus.className = "status err";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("session_id", sessionId);
+  for (const f of files) form.append("files", f);
+
+  uploadStatus.textContent = "Uploading…";
+  uploadStatus.className = "status";
+
+  try {
+    const res = await fetch(`${API}/api/upload`, { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Upload failed");
+
+    uploadStatus.textContent = `Loaded ${Object.keys(data.tables).length} table(s).`;
+    uploadStatus.className = "status ok";
+    renderTables(data.tables);
+    refreshSchema();
+  } catch (e) {
+    uploadStatus.textContent = e.message;
+    uploadStatus.className = "status err";
+  }
+};
+
+document.getElementById("extractBtn").onclick = async () => {
+  if (!sessionId) await newSession();
+  const url = document.getElementById("apiUrlInput").value.trim();
+  const format = document.getElementById("apiFormatInput").value;
+  const statusEl = document.getElementById("extractStatus");
+
+  if (!url) {
+    statusEl.textContent = "Enter an API URL first.";
+    statusEl.className = "status err";
+    return;
+  }
+
+  statusEl.textContent = "Extracting…";
+  statusEl.className = "status";
+
+  try {
+    const res = await fetch(`${API}/api/extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, url, format }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Extraction failed");
+
+    const tableCount = Object.keys(data.tables || {}).length;
+    statusEl.textContent = tableCount
+      ? `Extracted and loaded ${tableCount} table(s).`
+      : "Extracted (not auto-loaded — non-CSV format).";
+    statusEl.className = "status ok";
+
+    if (tableCount) {
+      renderTables(data.tables);
+      refreshSchema();
+    }
+  } catch (e) {
+    statusEl.textContent = e.message;
+    statusEl.className = "status err";
+  }
+};
+
+function renderTables(tables) {
+  tableList.innerHTML = "";
+  for (const [name, count] of Object.entries(tables)) {
+    const li = document.createElement("li");
+    const left = document.createElement("span");
+    left.textContent = name;
+    const right = document.createElement("span");
+    right.style.display = "flex";
+    right.style.alignItems = "center";
+
+    const countSpan = document.createElement("span");
+    countSpan.className = "count";
+    countSpan.textContent = `${count} rows`;
+
+    const dlBtn = document.createElement("button");
+    dlBtn.className = "icon-btn";
+    dlBtn.textContent = "Download";
+    dlBtn.onclick = () => {
+      window.location.href = `${API}/api/download/table/${sessionId}/${encodeURIComponent(name)}`;
+    };
+
+    right.appendChild(countSpan);
+    right.appendChild(dlBtn);
+    li.appendChild(left);
+    li.appendChild(right);
+    tableList.appendChild(li);
+  }
+}
+
+async function refreshSchema() {
+  if (!sessionId) return;
+  const res = await fetch(`${API}/api/tables/${sessionId}`);
+  const data = await res.json();
+  schemaDetails.textContent = data.schema_details || "—";
+}
+
+document.getElementById("refreshTablesBtn").onclick = refreshSchema;
+
+document.getElementById("deleteSessionBtn").onclick = async () => {
+  if (!sessionId) return;
+  await fetch(`${API}/api/session/${sessionId}`, { method: "DELETE" });
+  sessionId = null;
+  sessionLabel.textContent = "no session yet";
+  tableList.innerHTML = `<li style="color:var(--muted)">none yet</li>`;
+  schemaDetails.textContent = "—";
+  chat.innerHTML = "";
+  uploadStatus.textContent = "Session deleted.";
+  uploadStatus.className = "status";
+};
+
+async function ask() {
+  const input = document.getElementById("questionInput");
+  const question = input.value.trim();
+  if (!question) return;
+  if (!sessionId) {
+    addMsg("Start a session and upload some CSVs first.", "err");
+    return;
+  }
+
+  addMsg(question, "user");
+  input.value = "";
+
+  const thinking = addMsg("Thinking…", "bot");
+
+  try {
+    const res = await fetch(`${API}/api/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, question }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Query failed");
+
+    thinking.remove();
+    const div = addMsg(data.answer, "bot");
+
+    if (data.sql) {
+      const sqlPre = document.createElement("pre");
+      sqlPre.style.marginTop = "8px";
+      sqlPre.textContent = data.sql;
+      div.appendChild(sqlPre);
+    }
+  } catch (e) {
+    thinking.remove();
+    addMsg(e.message, "err");
+  }
+}
+
+document.getElementById("askBtn").onclick = ask;
+document.getElementById("questionInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") ask();
+});
+
+newSession();
+</script>
+</body>
+</html>
