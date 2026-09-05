@@ -66,7 +66,7 @@ urllib3==2.7.0
 uvicorn[standard]
 uuid-utils==0.17.0
 beautifulsoup4
-
+fastapi
 wcwidth==0.8.2
 websockets==15.0.1
 xxhash==3.8.1
