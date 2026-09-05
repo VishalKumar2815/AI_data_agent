@@ -28,6 +28,20 @@ class RouterSchema(BaseModel):
     answer: Literal["sql","etl"] = Field(..., description="Indicates whether the user's question is related to SQL or ETL operations")
     comments: str = Field(..., description="Additional comments or feedback regarding the classification of the user's question")
 
+class InsightsAgentSchema(BaseModel):
+    messages : Annotated[list,add] = Field(default_factory=list, description="List of messages to be processed by the insights agent")
+    user_question : str = Field(..., description="The original question asked by the user")
+    schema_name : str = Field(default="public", description="Postgres schema to summarize")
+    table_name : str = Field(default="", description="Specific table to summarize; empty means all tables in the schema")
+    data_summary : str = Field(default="", description="Statistical summary of the data (dtypes, nulls, describe(), sample rows)")
+    final_answer : str = Field(default="", description="The LLM-generated key insights, in plain business language")
+
+
+class ChatRouterSchema(BaseModel):
+    answer: Literal["sql","insights","transform"] = Field(..., description="Whether the user wants a specific data query answered, overall key insights/trends about the loaded data, or wants the data modified/cleaned/transformed and returned as a file")
+    comments: str = Field(default="", description="Reasoning behind the classification")
+
+
 class DataAgentSchema(BaseModel):
     messages : Annotated[list,add] = Field(..., description="List of messages to be processed by the Data agent")
     route_response : str = Field(..., description="The response from the router indicating whether to route to SQL or ETL operations")

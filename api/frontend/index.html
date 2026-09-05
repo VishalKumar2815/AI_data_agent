@@ -156,7 +156,7 @@
 <main>
   <div id="chat"></div>
   <div class="row">
-    <input type="text" id="questionInput" placeholder="Ask a question about your loaded data (SQL only — use the sidebar to upload/extract)…" />
+    <input type="text" id="questionInput" placeholder="Ask a query, say 'give me key insights', or 'remove null values and give me the file'…" />
     <button id="askBtn">Ask</button>
   </div>
 </main>
@@ -164,6 +164,7 @@
 <script>
 const API = ""; // same origin
 let sessionId = null;
+let loadedTables = {};
 
 const sessionLabel = document.getElementById("sessionLabel");
 const uploadStatus = document.getElementById("uploadStatus");
@@ -176,6 +177,7 @@ async function newSession() {
   const data = await res.json();
   sessionId = data.session_id;
   sessionLabel.textContent = `session: ${sessionId}`;
+  loadedTables = {};
   tableList.innerHTML = `<li style="color:var(--muted)">none yet</li>`;
   schemaDetails.textContent = "—";
   chat.innerHTML = "";
@@ -216,7 +218,8 @@ document.getElementById("uploadBtn").onclick = async () => {
 
     uploadStatus.textContent = `Loaded ${Object.keys(data.tables).length} table(s).`;
     uploadStatus.className = "status ok";
-    renderTables(data.tables);
+    loadedTables = { ...loadedTables, ...data.tables };
+    renderTables(loadedTables);
     refreshSchema();
   } catch (e) {
     uploadStatus.textContent = e.message;
@@ -255,7 +258,8 @@ document.getElementById("extractBtn").onclick = async () => {
     statusEl.className = "status ok";
 
     if (tableCount) {
-      renderTables(data.tables);
+      loadedTables = { ...loadedTables, ...data.tables };
+      renderTables(loadedTables);
       refreshSchema();
     }
   } catch (e) {
@@ -339,12 +343,31 @@ async function ask() {
 
     thinking.remove();
     const div = addMsg(data.answer, "bot");
+    const badge = document.createElement("div");
+    badge.className = "badge";
+    badge.textContent = data.type || "?";
+    div.prepend(badge);
 
     if (data.sql) {
       const sqlPre = document.createElement("pre");
       sqlPre.style.marginTop = "8px";
       sqlPre.textContent = data.sql;
       div.appendChild(sqlPre);
+    }
+
+    if (data.type === "transform" && data.new_table) {
+      const dlBtn = document.createElement("button");
+      dlBtn.className = "icon-btn";
+      dlBtn.style.marginTop = "8px";
+      dlBtn.textContent = `Download ${data.new_table}.csv`;
+      dlBtn.onclick = () => {
+        window.location.href = `${API}/api/download/table/${sessionId}/${encodeURIComponent(data.new_table)}`;
+      };
+      div.appendChild(dlBtn);
+
+      loadedTables = { ...loadedTables, [data.new_table]: data.row_count };
+      renderTables(loadedTables);
+      refreshSchema();
     }
   } catch (e) {
     thinking.remove();

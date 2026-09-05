@@ -19,8 +19,14 @@ from langchain_core.messages import HumanMessage
 
 from db_loader import load_user_csvs, cleanup_user_schema, schema_name_for, get_conn_details
 from utils.database import DatabaseUtil
+from utils.llm_pick import pick_llm
+from utils.etl_tools import ETLTools
 from agents.sql_analyst import sql_analyst
+from agents.insights_analyst import insights_analyst
 from agents.etl_analyst import extract_load_tool
+from Models.schema import ChatRouterSchema
+
+chat_router_llm = pick_llm("low").with_structured_output(ChatRouterSchema)
 
 
 app = FastAPI(title="Data Agent API")
@@ -53,8 +59,11 @@ class QueryRequest(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    type: str
     answer: str
     sql: Optional[str] = None
+    new_table: Optional[str] = None
+    row_count: Optional[int] = None
 
 
 class ExtractRequest(BaseModel):
@@ -183,10 +192,51 @@ def extract_from_api(req: ExtractRequest):
 @app.post("/api/query", response_model=QueryResponse)
 def query(req: QueryRequest):
     """
-    Chat only ever answers questions against already-loaded data — it calls
-    sql_analyst directly, skipping the sql/etl router entirely.
+    Chat only ever answers questions against already-loaded data — never
+    triggers extraction/scraping (those stay in the sidebar). A small router
+    first classifies the question as a specific-answer SQL query or an
+    open-ended "key insights" request, then dispatches accordingly.
     """
     schema_name = schema_name_for(req.session_id)
+
+    try:
+        route = chat_router_llm.invoke(req.question).answer
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Routing failed: {e}")
+
+    if route == "insights":
+        try:
+            response = insights_analyst.invoke(
+                {
+                    "messages": [],
+                    "user_question": req.question,
+                    "schema_name": schema_name,
+                    "table_name": "",
+                    "data_summary": "",
+                    "final_answer": "",
+                }
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Insights generation failed: {e}")
+
+        return {"type": "insights", "answer": response.get("final_answer", ""), "sql": None}
+
+    if route == "transform":
+        tools = ETLTools()
+        conn_details = get_conn_details()
+        try:
+            target_table = tools.pick_target_table(conn_details, schema_name, req.question)
+            result = tools.apply_transformation(conn_details, schema_name, target_table, req.question)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Transformation failed: {e}")
+
+        return {
+            "type": "transform",
+            "answer": result["message"],
+            "sql": None,
+            "new_table": result["target_table"],
+            "row_count": result["row_count"],
+        }
 
     input_schema = {
         "messages": [],
@@ -206,7 +256,11 @@ def query(req: QueryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
 
-    return {"answer": response.get("final_answer", ""), "sql": response.get("generated_sql_query")}
+    return {
+        "type": "sql",
+        "answer": response.get("final_answer", ""),
+        "sql": response.get("generated_sql_query"),
+    }
 
 
 @app.delete("/api/session/{session_id}")
